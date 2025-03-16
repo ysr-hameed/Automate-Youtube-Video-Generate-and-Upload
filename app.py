@@ -11,26 +11,30 @@ from google.oauth2.credentials import Credentials
 
 app = Flask(__name__)
 
-# Gemini API Key for generating quotes
-API_KEY = "AIzaSyAjYzAiMu15hHve6g7qjTQA7IX9R60abW8"
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+# Define actual paths for necessary files
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # Use the script's directory
+CACHE_FILE = os.path.join(BASE_DIR, "quotes_cache.txt")
+FONT_FILE = os.path.join(BASE_DIR, "Poppins-Regular.ttf")
+OUTPUT_FILE = os.path.join(BASE_DIR, "output.mp4")
+MUSIC_FOLDER = os.path.join(BASE_DIR, "trending_songs")
+TOKEN_FILE = os.path.join(BASE_DIR, "tokens.json")
+CLIENT_SECRET_FILE = os.path.join(BASE_DIR, "client_secrets.json")
 
-# Define paths for necessary files
-DOWNLOADS_PATH = os.path.expanduser("~/storage/downloads")
-CACHE_FILE = f"{DOWNLOADS_PATH}/quotes_cache.txt"  # Stores previously generated quotes
-FONT_FILE = f"{DOWNLOADS_PATH}/Poppins-Regular.ttf"  # Font for text overlay
-OUTPUT_FILE = f"{DOWNLOADS_PATH}/output.mp4"  # Generated video file
-MUSIC_FOLDER = f"{DOWNLOADS_PATH}/trending_songs"  # Folder containing background music
-TOKEN_FILE = f"{DOWNLOADS_PATH}/tokens.json"  # Stores authentication tokens
-CLIENT_SECRET_FILE = f"{DOWNLOADS_PATH}/client_secrets.json"  # Google API credentials file
-
-# Ensure the token file exists
+# Ensure token file exists and is a valid JSON
 if not os.path.exists(TOKEN_FILE):
     with open(TOKEN_FILE, "w") as f:
         json.dump([], f)
 
+# Gemini API
+API_KEY = "AIzaSyAjYzAiMu15hHve6g7qjTQA7IX9R60abW8"
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
 def fetch_unique_quote():
-    """Fetches a unique 10-15 word quote from Gemini API, ensuring it hasn't been used before."""
+    """Fetches a unique 10-15 word quote, avoiding repeats."""
+    if not os.path.exists(CACHE_FILE):
+        with open(CACHE_FILE, "w") as f:
+            f.write("")
+
     while True:
         payload = {
             "contents": [{"parts": [{"text": "Generate a unique, meaningful quote in 10-15 words."}]}],
@@ -39,7 +43,6 @@ def fetch_unique_quote():
         response = requests.post(f"{GEMINI_API_URL}?key={API_KEY}", json=payload)
         quote = response.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
 
-        # Load cached quotes to avoid repetition
         with open(CACHE_FILE, "r") as f:
             cached_quotes = set(f.read().splitlines())
 
@@ -49,12 +52,11 @@ def fetch_unique_quote():
             return quote
 
 def generate_video(quote):
-    """Creates a video with the given quote displayed as text."""
+    """Creates a video with the quote displayed as text."""
     words = quote.split()
     lines = []
     line = ""
 
-    # Split the quote into multiple lines for better readability
     for word in words:
         if len(line) + len(word) <= 25:
             line += word + " "
@@ -63,7 +65,6 @@ def generate_video(quote):
             line = word + " "
     lines.append(line.strip())
 
-    # Generate FFmpeg text filters for each line
     text_filters = []
     y_offset = 0.12
     font_size = 65
@@ -72,31 +73,32 @@ def generate_video(quote):
         text_filters.append(
             f"drawtext=fontfile='{FONT_FILE}':text='{line}':fontcolor=white:fontsize={font_size}:x=w*0.05:y=h*{y_offset}:alpha='if(lt(t\\,1)\\,0\\,if(lt(t\\,2)\\,(t-1)/1\\,1))'"
         )
-        y_offset += 0.065  # Adjust Y position for each line
+        y_offset += 0.065  
 
-    # Generate video using FFmpeg
     ffmpeg_command = f"""
-    ffmpeg -y -f lavfi -i color=c=black:s=1080x1920:d=10 -vf "{','.join(text_filters)}" -preset slow -crf 18 -c:v libx264 -t 10 {OUTPUT_FILE}
+    ffmpeg -y -f lavfi -i color=c=black:s=1080x1920:d=10 -vf "{','.join(text_filters)}" -preset slow -crf 18 -c:v libx264 -t 10 "{OUTPUT_FILE}"
     """
     subprocess.run(ffmpeg_command, shell=True)
 
-    # Add background music if available
     music_file = get_random_song()
     if music_file:
-        OUTPUT_WITH_AUDIO = f"{DOWNLOADS_PATH}/output_with_audio.mp4"
+        output_with_audio = os.path.join(BASE_DIR, "output_with_audio.mp4")
         ffmpeg_audio_command = f"""
-        ffmpeg -y -i {OUTPUT_FILE} -i "{music_file}" -filter_complex "[1:a]afade=t=in:ss=0:d=2,afade=t=out:st=8:d=2[a1];[a1]volume=0.5[a2]" -map 0:v -map "[a2]" -shortest -preset slow -crf 18 -c:v libx264 -c:a aac -b:a 192k {OUTPUT_WITH_AUDIO}
+        ffmpeg -y -i "{OUTPUT_FILE}" -i "{music_file}" -filter_complex "[1:a]afade=t=in:ss=0:d=2,afade=t=out:st=8:d=2[a1];[a1]volume=0.5[a2]" -map 0:v -map "[a2]" -shortest -preset slow -crf 18 -c:v libx264 -c:a aac -b:a 192k "{output_with_audio}"
         """
         subprocess.run(ffmpeg_audio_command, shell=True)
-        os.replace(OUTPUT_WITH_AUDIO, OUTPUT_FILE)
+        os.replace(output_with_audio, OUTPUT_FILE)
 
 def get_random_song():
     """Returns a random song from the trending_songs folder."""
+    if not os.path.exists(MUSIC_FOLDER):
+        return None
+
     songs = [f for f in os.listdir(MUSIC_FOLDER) if f.endswith((".mp3", ".wav", ".aac", ".m4a"))]
     return os.path.join(MUSIC_FOLDER, random.choice(songs)) if songs else None
 
 def authenticate_youtube(user_index):
-    """Authenticates YouTube API for a given user index, adding new users if necessary."""
+    """Authenticates YouTube API for a given user index."""
     with open(TOKEN_FILE, "r") as f:
         try:
             users = json.load(f)
