@@ -2,6 +2,8 @@
 
 An **AI-powered web application** that automates the creation and uploading of **YouTube Shorts**. It generates unique quotes using **Gemini 2.0 Flash API**, overlays them on videos, adds trending background music, and uploads the final videos to YouTube automatically.  
 
+## My Automate YouTube Channel URL
+Visit [Mindovix YouTube Channel](https://youtube.com/@mindovix?si=anmUbhpvm2Ca5cKo) for video examples.
 ## ✨ Features  
 ✅ **AI-Generated Unique Quotes** – Ensures originality using embeddings and similarity checks.  
 ✅ **Automated Video Creation** – Uses **FFmpeg** to generate high-quality **9:16** videos.  
